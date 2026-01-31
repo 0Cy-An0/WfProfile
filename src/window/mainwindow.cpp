@@ -16,6 +16,7 @@
 #include <qscreen.h>
 #include <qscrollbar.h>
 
+#include "CaptureOverlay.h"
 #include "overviewPartWidget.h"
 #include "apiParser/apiParser.h"
 #include "autostart/autostart.h"
@@ -490,7 +491,7 @@ void MainWindow::updateOverview() {
         if (m.sp && m.isCompleted) {
             steelCompleted++;
         }
-        if (!m.isCompleted) {
+        if (!m.sp) {
             steelIncomplete << QString::fromStdString(m.name);
         }
     }
@@ -642,6 +643,9 @@ QWidget* MainWindow::createOptionsPage() {
     auto syncOnMissionFinishCheckbox = new QCheckBox("Sync Inventory on mission finish", automationGroup);
     syncOnMissionFinishCheckbox->setChecked(settings.syncOnMissionFinish);
 
+    auto PrimeMasteryOverlay = new QCheckBox("Show stats for Main prime part above relic rewards", automationGroup);
+    PrimeMasteryOverlay->setChecked(settings.relicOverlay);
+
     auto manualSyncBtn = new QPushButton("Sync inventory", dataGroup);
 
     auto intervalLabel = new QLabel("Auto-Sync Interval (minutes):", automationGroup);
@@ -649,10 +653,36 @@ QWidget* MainWindow::createOptionsPage() {
     intervalSpinBox->setRange(1, 120);
     intervalSpinBox->setValue(settings.syncTime);
 
+    auto captureLayout = new QHBoxLayout();
+    auto topLeftLabel = new QLabel("Top Left (x,y):");
+    auto topLeftEdit = new QLineEdit(QString::number(settings.captureTopLeft.x()) + "," + QString::number(settings.captureTopLeft.y()));
+
+
+    auto bottomRightLabel = new QLabel("Bottom Right (x,y):");
+    auto bottomRightEdit = new QLineEdit(QString::number(settings.captureBottomRight.x()) + "," + QString::number(settings.captureBottomRight.y()));
+
+
+
+    auto sections = new QLabel("Number of rewards expected:", automationGroup);
+    auto sectionsBox = new QSpinBox(automationGroup);
+    sectionsBox->setRange(1, 4);
+    sectionsBox->setValue(settings.sections);
+
+    auto testCaptureBtn = new QPushButton("Press to Show Capture screen (30s overlay)");
+    captureLayout->addWidget(topLeftLabel);
+    captureLayout->addWidget(topLeftEdit);
+    captureLayout->addWidget(bottomRightLabel);
+    captureLayout->addWidget(bottomRightEdit);
+
     automationLayout->addWidget(autoStartCheckbox);
     automationLayout->addWidget(autoSyncCheckbox);
     automationLayout->addWidget(syncOnMissionFinishCheckbox);
     automationLayout->addWidget(manualSyncBtn);
+    automationLayout->addWidget(PrimeMasteryOverlay);
+    automationLayout->addLayout(captureLayout);
+    automationLayout->addWidget(sections);
+    automationLayout->addWidget(sectionsBox);
+    automationLayout->addWidget(testCaptureBtn);
     automationLayout->addWidget(intervalLabel);
     automationLayout->addWidget(intervalSpinBox);
 
@@ -684,6 +714,88 @@ QWidget* MainWindow::createOptionsPage() {
     connect(intervalSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, [=](int val) {
         settings.syncTime = val;
         WriteSettings(settings);
+    });
+
+    connect(PrimeMasteryOverlay, &QCheckBox::toggled, this, [=](bool checked) {
+        settings.relicOverlay = checked;
+        WriteSettings(settings);
+    });
+
+    connect(topLeftEdit, &QLineEdit::textChanged, this, [=](const QString& text) {
+        QStringList parts = text.split(",");
+        if (parts.size() == 2) {
+            bool xOk, yOk;
+            int x = parts[0].trimmed().toInt(&xOk);
+            int y = parts[1].trimmed().toInt(&yOk);
+            if (xOk && yOk) {
+                settings.captureTopLeft = QPoint(x, y);
+                WriteSettings(settings);
+                LogThis("Updated bottom-left: " + std::to_string(x) + "," + std::to_string(y));
+            }
+        }
+    });
+
+    connect(bottomRightEdit, &QLineEdit::textChanged, this, [=](const QString& text) {
+        QStringList parts = text.split(",");
+        if (parts.size() == 2) {
+            bool xOk, yOk;
+            int x = parts[0].trimmed().toInt(&xOk);
+            int y = parts[1].trimmed().toInt(&yOk);
+            if (xOk && yOk) {
+                settings.captureBottomRight = QPoint(x, y);
+                WriteSettings(settings);
+                LogThis("Updated top-right: " + std::to_string(x) + "," + std::to_string(y));
+            }
+        }
+    });
+
+    connect(sectionsBox, QOverload<int>::of(&QSpinBox::valueChanged), this, [=](int val) {
+        settings.sections = val;
+        WriteSettings(settings);
+    });
+
+    connect(testCaptureBtn, &QPushButton::pressed, this, [this]() {
+        LogThis("TestButtonPressed");
+        //TODO: remember to put background workers overlays in an array too (with early exit)
+
+        QRect rect(settings.captureTopLeft, settings.captureBottomRight);
+
+        for (CaptureOverlay* overlay : m_overlays) {
+            if (overlay) overlay->deleteLater();
+        }
+        m_overlays.clear();
+
+        int sections = settings.sections;
+        if (sections < 1) {
+            LogThis("number of sections below 1");
+            return;
+        }
+
+        int sectionWidth = rect.width() / sections;
+        int sectionHeight = rect.height();
+
+        for (int i = 0; i < sections; ++i) {
+            QRect sectionRect(
+                rect.x() + i * sectionWidth,
+                rect.y(),
+                sectionWidth,
+                sectionHeight
+            );
+
+            auto* overlay = new CaptureOverlay(nullptr);
+            connect(overlay, &CaptureOverlay::expired,
+            this, [this](CaptureOverlay* o) {
+                m_overlays.erase(std::ranges::remove(m_overlays, o).begin(), m_overlays.end());
+                o->deleteLater();
+            });
+            overlay->setGeometry(sectionRect);
+            overlay->raise();
+            overlay->show();
+
+            m_overlays.push_back(overlay);
+            LogThis("Created overlay " + std::to_string(i+1) +
+                    " at x=" + std::to_string(sectionRect.x()));
+        }
     });
 
     connect(manualSyncBtn, &QPushButton::clicked, this, &MainWindow::updatePlayerData);
@@ -786,7 +898,26 @@ void MainWindow::updatePlayerData(bool skipFetch) {
     updateOverview();
 }
 
+void MainWindow::closeEvent(QCloseEvent* event) {
+    for (CaptureOverlay* overlay : m_overlays) {
+        if (overlay) {
+            overlay->earlyTimeout();
+            overlay->setParent(this); //for some reason not doing this and qDelete will leave exactly 1 of the potential 4 overlays just hanging there. I assume i could skip early timeout with this as QT should handle the deletion now, but maybe not.
+        }
+    }
+    qDeleteAll(m_overlays);
+    m_overlays.clear();
+
+    if (backgroundWorker) {
+        backgroundWorker->stopWork();
+    }
+
+    event->accept();
+}
+
 MainWindow::~MainWindow() {
+    qDeleteAll(m_overlays);
+    m_overlays.clear();
     if (backgroundWorker) {
         backgroundWorker->stopWork();
     }

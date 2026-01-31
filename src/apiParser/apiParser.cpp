@@ -4,7 +4,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
 #include "stb_image_write.h"
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <curl/curl.h>
@@ -17,13 +16,15 @@
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
-#include "../EELogParser/logParser.h"
 #include "FileAccess/FileAccess.h"
 
 //cache stuff; Max is in the header
 std::list<std::string> cache_order;
 std::unordered_map<std::string, std::pair<std::shared_ptr<std::vector<uint8_t>>, std::list<std::string>::iterator>> url_cache;
 std::shared_mutex cache_mutex;
+inline std::chrono::steady_clock::time_point next_allowed{std::chrono::steady_clock::time_point()};
+inline constexpr auto THROTTLE_SECONDS = std::chrono::seconds(30);
+
 
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t realSize = size * nmemb;
@@ -176,6 +177,13 @@ std::vector<uint8_t> convertToPngBuffer(const unsigned char* jpg_data, size_t jp
 std::vector<uint8_t> fetchUrl(const std::string& url, FetchType fetchType) {
     //if (fetchType == FetchType::PNG) return get_fallback_default_png();
 
+    auto now = std::chrono::steady_clock::now();
+    if (next_allowed > now) {
+        auto sleep_duration = next_allowed - now;
+        LogThis("Throttling url fetch: sleeping " + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(sleep_duration).count()) + "s");
+        std::this_thread::sleep_for(sleep_duration);
+    }
+
     std::string effective_url = url;
     if (fetchType == FetchType::PNG) effective_url = "https://content.warframe.com/PublicExport" + url;
     //LogThis("Fetching url: " + effective_url);
@@ -206,6 +214,8 @@ std::vector<uint8_t> fetchUrl(const std::string& url, FetchType fetchType) {
     }
 
     curl_easy_cleanup(curl);
+
+    next_allowed = std::chrono::steady_clock::now() + THROTTLE_SECONDS;
 
     //LogThis("Successfully fetched url: " + effective_url);
     switch (fetchType) {

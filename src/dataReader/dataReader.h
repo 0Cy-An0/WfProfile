@@ -98,9 +98,13 @@ static std::map<std::string, std::string> categoryNameMap = {
     {"DRIFTER", "Duviri"}
 };
 
-static std::unordered_map<std::string, std::string> NameMap;
+extern std::unordered_map<std::string, std::string> BpToResultMap;
+extern std::unordered_map<std::string, std::string> ResultToBpMap;
+static std::unordered_map<std::string, std::vector<std::string>> IngredientToResultMap;
+extern std::unordered_map<std::string, std::string> NameMap;
 static std::unordered_map<std::string, int> XPMap;
 extern int extraSpecialXp;
+extern std::vector<ItemData> items;
 
 // Bitwise OR
 InventoryCategories operator|(InventoryCategories lhs, InventoryCategories rhs);
@@ -125,6 +129,8 @@ InventoryCategories unsetCategory(InventoryCategories value, InventoryCategories
 
 //game relevant
 void RefreshNameMap();
+void RefreshResultBpMap();
+std::string nameFromId(const std::string& id, bool supressError = false);
 
 //player relevant
 void RefreshXPMap();
@@ -137,6 +143,7 @@ std::vector<ItemData> GetItems();
 std::string getHonoria();
 std::string getClan();
 std::string getName();
+std::tuple<std::vector<ItemData>, std::vector<int>> getMainCraftedIdsWithQuantities(const std::string& bpId, int depth = 0);
 
 void exportAsCsv(std::string fileName);
 

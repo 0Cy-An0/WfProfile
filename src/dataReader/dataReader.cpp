@@ -1,6 +1,7 @@
 #include "dataReader.h"
 
 #include <fstream>
+#include <mutex>
 #include <regex>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -8,8 +9,6 @@
 #include <unordered_set>
 
 #include "FileAccess/FileAccess.h"
-
-
 
 using json = nlohmann::json;
 
@@ -68,7 +67,7 @@ ReturnType getValueByKey(const JsonType& jsonData,
     }
 }
 
-std::string nameFromId(const std::string& id, bool supressError = false) {
+std::string nameFromId(const std::string& id, bool supressError) {
     if (NameMap.empty()) {
         RefreshNameMap();
     }
@@ -260,7 +259,44 @@ std::unordered_map<std::string, std::string> extractWarframeAbilities(
     return result;
 }
 
+std::unordered_map<std::string, std::string> BpToResultMap;
+std::unordered_map<std::string, std::string> ResultToBpMap;
+
+void RefreshResultBpMap() {
+    BpToResultMap.clear();
+    ResultToBpMap.clear();
+    const auto recipes = getValueByKey<nlohmann::json>(ReadData(DataType::Blueprints), "ExportRecipes");
+    for (const auto& entry : recipes) {
+        std::string bp = entry.value("uniqueName", "");
+        std::string result = entry.value("resultType", "");
+        if (!bp.empty() && !result.empty()) {
+            BpToResultMap[bp] = result;
+            ResultToBpMap[result] = bp;
+        }
+    }
+}
+
+void RefreshIngredientToResultMap() {
+    IngredientToResultMap.clear();
+    const auto recipes = getValueByKey<nlohmann::json>(ReadData(DataType::Blueprints), "ExportRecipes");
+    for (const auto& entry : recipes) {
+        if (entry.contains("ingredients") && entry["ingredients"].is_array()) {
+            for (const auto& ingredient : entry["ingredients"]) {
+                std::string ingredientId = ingredient.value("ItemType", "");
+                std::string resultId = entry.value("resultType", "");
+                if (!ingredientId.empty() && !resultId.empty()) {
+                    IngredientToResultMap[ingredientId].push_back(resultId);
+                }
+            }
+        }
+    }
+}
+
+std::mutex NameMapMutex = std::mutex();
+std::unordered_map<std::string, std::string> NameMap;
+
 void RefreshNameMap() {
+    std::lock_guard<std::mutex> lock(NameMapMutex);
     NameMap.clear();
     const nlohmann::json frames = ReadData(DataType::Warframes);
     const nlohmann::json weapons = ReadData(DataType::Weapons);
@@ -305,6 +341,19 @@ void RefreshNameMap() {
     std::unordered_map<std::string, std::string> idToEnemyName = enemies;
     LogThis("Loaded " + std::to_string(idToEnemyName.size()) + " Enemy entries.");
     NameMap.insert(idToEnemyName.begin(), idToEnemyName.end());
+
+    if (ResultToBpMap.empty()) {
+        RefreshResultBpMap();
+    }
+
+    std::unordered_map<std::string, std::string> tempMap;
+    for (const auto& [id, name] : NameMap) {
+        auto it = ResultToBpMap.find(id); //In this case there exists a blueprint version, and we dont have 'x blueprint' as is in the export
+        if (it != ResultToBpMap.end()) {
+            tempMap.emplace(it->second, name + " Blueprint");
+        }
+    }
+    NameMap.insert(tempMap.begin(), tempMap.end());
 }
 
 void RefreshXPMap() {
@@ -325,6 +374,66 @@ void RefreshXPMap() {
     }
 
     LogThis("Refreshed XPMap with " + std::to_string(XPMap.size()) + " entries.");
+}
+
+int findIngredientQuantity(const std::string& ingredientId, const std::string& recipeResultId) {
+    const auto recipes = getValueByKey<nlohmann::json>(ReadData(DataType::Blueprints), "ExportRecipes");
+    for (const auto& recipe : recipes) {
+        if (recipe.value("resultType", "") == recipeResultId) {
+            int totalCount = 0;
+            if (recipe.contains("ingredients") && recipe["ingredients"].is_array()) {
+                for (const auto& ing : recipe["ingredients"]) {
+                    if (ing.value("ItemType", "") == ingredientId) {
+                        totalCount += ing.value("ItemCount", 0);
+                    }
+                }
+            }
+            if (totalCount > 0) return totalCount;
+        }
+    }
+    return 0;
+}
+
+std::vector<ItemData> items;
+std::tuple<std::vector<ItemData>, std::vector<int>> getMainCraftedIdsWithQuantities(const std::string& bpId, int depth) {
+    if (depth > 10) return {{}, {}};
+
+    if (BpToResultMap.empty()) RefreshResultBpMap();
+    if (IngredientToResultMap.empty()) RefreshIngredientToResultMap();
+
+    std::vector<ItemData> finalItems;
+    std::vector<int> quantities;
+
+    //Blueprint → what it crafts (1:1)
+    if (auto it = BpToResultMap.find(bpId); it != BpToResultMap.end()) {
+        return getMainCraftedIdsWithQuantities(it->second, depth + 1);
+    }
+
+    //Ingredient → all recipes that use it
+    if (auto it = IngredientToResultMap.find(bpId); it != IngredientToResultMap.end()) {
+        std::unordered_set<std::string> seen;
+        for (const auto& resultId : it->second) {
+            if (seen.contains(resultId)) continue;
+            seen.insert(resultId);
+
+            int ingredientQty = findIngredientQuantity(bpId, resultId);
+            auto [subItems, subQtys] = getMainCraftedIdsWithQuantities(resultId, depth + 1);
+
+            for (size_t i = 0; i < subItems.size(); ++i) {
+                finalItems.push_back(subItems[i]);
+                quantities.push_back(subQtys[i] * ingredientQty);
+            }
+        }
+    }
+
+    for (const auto& item : items) {
+        if (item.getCraftedId() == bpId) {
+            finalItems.push_back(item);
+            quantities.push_back(1);
+        }
+    }
+
+    return {finalItems, quantities};
 }
 
 int XPFromId(const std::string& id) {
@@ -494,7 +603,7 @@ std::vector<ItemData> GetItems()
 }
 
 int GetMasteryRank() {
-    LogThis("called GetName");
+    LogThis("called GetMasteryRank");
     nlohmann::json player = ReadData(DataType::Player);
     LogThis("Parsed Player Json successfully");
     auto result = getValueByKey<nlohmann::json>(player, "Results", nlohmann::json::array({{}}))[0];
@@ -580,6 +689,9 @@ std::vector<MissionData> GetMissions(const json& playerJson, const json& NodesXp
             //TODO: Verify if tier can be 1 and completes 0 or more concretely when it increases the tier to 1
             data.isCompleted = completes > 0;
             data.sp = (tier == 1); // Steel Path completed
+        } else {
+            data.sp = false;
+            data.isCompleted = false;
         }
 
         // XP lookup
@@ -606,11 +718,12 @@ std::vector<MissionData> GetIncompleteMissions(const std::vector<MissionData>& m
     return result;
 }
 
-int GetTotalMissionXp(const std::vector<MissionData>& missions) {
+int GetCompletedMissionXp(const std::vector<MissionData>& missions) {
     int total = 0;
     for (const auto& mission : missions) {
         int xp = mission.baseXp;
         if (mission.isCompleted) {
+            LogThis("Mission counted as completed: " + mission.tag);
             xp *= mission.sp ? 2 : 1;
             total += xp;
         }
@@ -638,6 +751,10 @@ int GetIntrinsicXp(const json& jsonData) {
     auto result = getValueByKey<nlohmann::json>(jsonData, "Results", nlohmann::json::array({{}}))[0];
     json intrinsicJson = getValueByKey<nlohmann::json>(result, "PlayerSkills");
     for (auto& intrinsic : intrinsicJson.items()) {
+        std::string key = intrinsic.key();
+        if (key.rfind("LPP_", 0) == 0) {
+            continue;  // Skip LPP_ entries (unspent progress/intrinsic affinity)
+        }
         int intrinsicLevel = intrinsic.value().get<int>();
         totalXp += intrinsicLevel * 1500;
     }
@@ -680,7 +797,7 @@ int GetCurrentXP() {
     }
     LogThis("parsed XPInfo for a total of " + std::to_string(total) + " Mastery Xp.");
     std::vector<MissionData> missiondata = GetMissions(player, ReadData(DataType::Nodes), ReadData(DataType::Regions)); //TODO: solve problem: how to get new values on updates; for DataType::Nodes
-    int missionXp = GetTotalMissionXp(missiondata);
+    int missionXp = GetCompletedMissionXp(missiondata);
     total += missionXp;
     LogThis("got mission xp: " + std::to_string(missionXp));
     int intrinsicXp = GetIntrinsicXp(player);
@@ -714,6 +831,7 @@ std::vector<IntrinsicCategory> GetIntrinsics() {
         }
     } catch (const nlohmann::json::out_of_range& e) {
         LogThis(".at failed: " + std::string(e.what()));
+        return std::vector<IntrinsicCategory>{};
     }
 
     std::vector<IntrinsicCategory> categories;

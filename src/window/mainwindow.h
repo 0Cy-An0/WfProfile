@@ -2,10 +2,11 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QScrollArea>
+#include <QCloseEvent>
 #include <QStackedWidget>
 #include <QProgressBar> //this is used even if the IDE tells you its not
 
+#include "CaptureOverlay.h"
 #include "overviewPartWidget.h"
 #include "background/BackgroundWorker.h"
 #include "dataReader/dataReader.h"
@@ -27,9 +28,12 @@ public:
     static Settings getWindowSettings();
     void updatePlayerData(bool skipFetch = false);
 
+    void closeEvent(QCloseEvent *event) override;
+
     ~MainWindow() override;
 
 private:
+    std::vector<CaptureOverlay*> m_overlays;
     BackgroundWorker* backgroundWorker = nullptr;
     QThread* backgroundThread = nullptr;
 
@@ -48,9 +52,6 @@ private:
     OverviewPartWidget* intrinsicsField = nullptr;
 
     int currentIndex = 0;
-
-    std::vector<ItemData> items; //this is important otherwise these get deleted after creation and all filtering etc. causes invalid access violation
-    //the above comment might he invalid now that filtering doesnt exist anymore; but i wouldnt touch it
 
     QString btnStyle = R"(
         QPushButton {

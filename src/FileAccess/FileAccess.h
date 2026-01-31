@@ -1,6 +1,7 @@
 #ifndef FILEACCESS_H
 #define FILEACCESS_H
 #include <ios>
+#include <qpoint.h>
 #include <string>
 #include <nlohmann/json.hpp>
 
@@ -32,13 +33,17 @@ struct Settings {
     bool autoSync = false;
     int syncTime = 10;
     bool syncOnMissionFinish = false;
+    QPoint captureTopLeft{475, 400};
+    QPoint captureBottomRight{1440, 460};
+    int sections = 4;
+    bool relicOverlay = false;
     std::string id{};
 };
 
 static const std::string logPath = "../data/Log/Log.txt";
 static const std::string settingPath = "../data/Settings/Settings.cfg";
 static const std::string downloadPath = "../data/Download/";
-void LogThis(const std::string& str);
+void LogThis(const std::string& str, bool ThisIsNecessaryDontTouchThis = false);
 bool SaveDataAt(const std::string& data, const std::string& path, std::ios_base::openmode mode = std::ios::out);
 std::shared_ptr<const std::vector<uint8_t>> GetImageByFileOrDownload(const std::string& image);
 Settings LoadSettings();

@@ -21,8 +21,12 @@ bool SaveDataAt(const std::string& data, const std::string& path, const std::ios
 //locking LogThis() to make sure it can be called from background thread safely
 std::mutex logMutex;
 
-void LogThis(const std::string& str) {
+void LogThis(const std::string& str, const bool ThisIsNecessaryDontTouchThis) {
     std::lock_guard lock(logMutex);
+    if (ThisIsNecessaryDontTouchThis) { //my best guess is this does something with windows and otherwise it doesnt see the file update but idk
+        SaveDataAt("", logPath, std::ios::out | std::ios::app);
+        return;
+    }
     SaveDataAt(str + "\n", logPath, std::ios::out | std::ios::app);
 }
 
@@ -135,6 +139,27 @@ Settings LoadSettings() {
             catch (...) { LogThis("Invalid integer for syncTime in settings"); }
         }
         else if (key == "syncOnMissionFinish") settings.syncOnMissionFinish = (value == "true" || value == "1");
+        else if (key == "relicOverlay") settings.relicOverlay = (value == "true" || value == "1");
+        else if (key == "captureBottomLeftX") {
+            try { settings.captureTopLeft.setX(std::stoi(value)); }
+            catch (...) { LogThis("Invalid x for captureBottomLeft in settings"); }
+        }
+        else if (key == "captureBottomLeftY") {
+            try { settings.captureTopLeft.setY(std::stoi(value)); }
+            catch (...) { LogThis("Invalid y for captureBottomLeft in settings"); }
+        }
+        else if (key == "captureTopRightX") {
+            try { settings.captureBottomRight.setX(std::stoi(value)); }
+            catch (...) { LogThis("Invalid x for captureTopRight in settings"); }
+        }
+        else if (key == "captureTopRightY") {
+            try { settings.captureBottomRight.setY(std::stoi(value)); }
+            catch (...) { LogThis("Invalid y for captureTopRight in settings"); }
+        }
+        else if (key == "relicRewardSections") {
+            try { settings.sections = std::stoi(value); }
+            catch (...) { LogThis("Invalid integer for relicRewardSections in settings"); }
+        }
     }
 
     return settings;
@@ -148,6 +173,12 @@ void WriteSettings(const Settings& settings) {
     data += "syncTime=" + std::to_string(settings.syncTime) + "\n";
     data += "syncOnMissionFinish=" + std::string(settings.syncOnMissionFinish ? "true" : "false") + "\n";
     data += "id=" + settings.id + "\n";
+    data += "relicOverlay=" + std::string(settings.relicOverlay ? "true" : "false") + "\n";
+    data += "captureBottomLeftX=" + std::to_string(settings.captureTopLeft.x()) + "\n";
+    data += "captureBottomLeftY=" + std::to_string(settings.captureTopLeft.y()) + "\n";
+    data += "captureTopRightX=" + std::to_string(settings.captureBottomRight.x()) + "\n";
+    data += "captureTopRightY=" + std::to_string(settings.captureBottomRight.y()) + "\n";
+    data += "relicRewardSections=" + std::to_string(settings.sections) + "\n";
 
     if (!SaveDataAt(data, settingPath, std::ios::out)) {
         LogThis("Failed to write settings to file: " + settingPath);
