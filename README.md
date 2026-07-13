@@ -19,6 +19,7 @@ Then open the profile-viewing URL for your platform, replacing `ACCOUNTID` with 
 - Android: `https://api-and.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
 
 This Tool should otherwise be uneffected and will still show you Progress as shown in the screenshots below.
+
 ---
 
 ## Usage Notes
