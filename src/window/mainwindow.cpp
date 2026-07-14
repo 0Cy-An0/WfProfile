@@ -5,6 +5,8 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QStandardPaths>
+#include <QDesktopServices>
+#include <QComboBox>
 #include <QInputDialog>
 #include <QGroupBox>
 #include <QSpinBox>
@@ -13,7 +15,6 @@
 
 #include <QDir>
 #include <qguiapplication.h>
-#include <qscreen.h>
 #include <qscrollbar.h>
 
 #include "CaptureOverlay.h"
@@ -21,7 +22,6 @@
 #include "apiParser/apiParser.h"
 #include "autostart/autostart.h"
 #include "dataReader/dataReader.h"
-#include "EELogParser/logParser.h"
 #include "FileAccess/FileAccess.h"
 
 //TODO: Move somewhere better
@@ -603,17 +603,39 @@ QWidget* MainWindow::createOptionsPage() {
         IdInput->setText(settings.id.data());
     }
 
+    auto* platformCombo = new QComboBox(dataGroup);
+    platformCombo->addItem("PC", QVariant::fromValue((int)WarframePlatform::PC));
+    platformCombo->addItem("PlayStation", QVariant::fromValue((int)WarframePlatform::PlayStation));
+    platformCombo->addItem("Xbox", QVariant::fromValue((int)WarframePlatform::Xbox));
+    platformCombo->addItem("Switch", QVariant::fromValue((int)WarframePlatform::Switch));
+    platformCombo->addItem("iOS", QVariant::fromValue((int)WarframePlatform::iOS));
+    platformCombo->addItem("Android", QVariant::fromValue((int)WarframePlatform::Android));
 
-    auto autoFillBtn = new QPushButton("Auto", dataGroup); //use getLastPlayerId()
-    autoFillBtn->setStyleSheet(btnStyle);
+    platformCombo->setCurrentIndex((int)settings.platform);
+
+    auto BrowserBtn = new QPushButton("Open Browser", dataGroup);
+    BrowserBtn->setStyleSheet(btnStyle);
 
     auto gameUpdateBtn = new QPushButton("Update Game Data", dataGroup);
     gameUpdateBtn->setStyleSheet(btnStyle);
 
+    auto helpLabel = new QLabel(
+    "Warframe no longer exposes profile IDs in EE.log. "
+    "Click the button to open Warframe in your browser, sign in, "
+    "then copy your user_id from /api/user-data and paste it here.",
+    dataGroup
+);
+    helpLabel->setWordWrap(true);
+    helpLabel->setStyleSheet("color: white; font-size: 11px;");
+
+
     auto* inputLayout = new QHBoxLayout();
     inputLayout->addWidget(IdInput);
-    inputLayout->addWidget(autoFillBtn);
+    inputLayout->addWidget(BrowserBtn);
+    inputLayout->addWidget(platformCombo);
+
     dataLayout->addLayout(inputLayout);
+    dataLayout->addWidget(helpLabel);
     dataLayout->addWidget(gameUpdateBtn);
 
     connect(gameUpdateBtn, &QPushButton::clicked, [this]() {
@@ -625,9 +647,14 @@ QWidget* MainWindow::createOptionsPage() {
         WriteSettings(settings);
     });
 
-    connect(autoFillBtn, &QPushButton::clicked, this, [=] {
-        settings.id = getLastPlayerId(true);
-        IdInput->setText(settings.id.data());
+    connect(BrowserBtn, &QPushButton::clicked, this, [=] {
+        QDesktopServices::openUrl(QUrl("https://www.warframe.com/"));
+        QDesktopServices::openUrl(QUrl("https://www.warframe.com/api/user-data"));
+    });
+
+    connect(platformCombo, &QComboBox::currentIndexChanged, this, [=](int idx) {
+        settings.platform = static_cast<WarframePlatform>(platformCombo->itemData(idx).toInt());
+        WriteSettings(settings);
     });
 
     // ---------- Bottom-Right: Automation ----------
@@ -888,7 +915,7 @@ void MainWindow::updateGameData() {
 void MainWindow::updatePlayerData(bool skipFetch) {
     LogThis("Updating data");
     if (!skipFetch) {
-        bool success = UpdatePlayerData(settings.id); //TODO: maybe do something on fail idk put a warning banner up
+        bool success = UpdatePlayerData(settings.id, settings.platform); //TODO: maybe do something on fail idk put a warning banner up
         if (!success) {
             LogThis("player data failed to download; check if id is set correctly");
         }

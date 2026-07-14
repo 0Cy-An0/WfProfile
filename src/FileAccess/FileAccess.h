@@ -27,6 +27,15 @@ enum class DataType {
     Enemies
 };
 
+enum class WarframePlatform {
+    PC,
+    PlayStation,
+    Xbox,
+    Switch,
+    iOS,
+    Android
+};
+
 struct Settings {
     bool hideFounder = true;
     bool startWithSystem = false;
@@ -38,6 +47,7 @@ struct Settings {
     int sections = 4;
     bool relicOverlay = false;
     std::string id{};
+    WarframePlatform platform = WarframePlatform::PC;
 };
 
 static const std::string logPath = "../data/Log/Log.txt";

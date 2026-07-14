@@ -160,6 +160,10 @@ Settings LoadSettings() {
             try { settings.sections = std::stoi(value); }
             catch (...) { LogThis("Invalid integer for relicRewardSections in settings"); }
         }
+        else if (key == "platform") {
+            try { settings.platform = static_cast<WarframePlatform>(std::stoi(value)); }
+            catch (...) { LogThis("Invalid integer for platform in settings"); }
+        }
     }
 
     return settings;
@@ -179,6 +183,7 @@ void WriteSettings(const Settings& settings) {
     data += "captureTopRightX=" + std::to_string(settings.captureBottomRight.x()) + "\n";
     data += "captureTopRightY=" + std::to_string(settings.captureBottomRight.y()) + "\n";
     data += "relicRewardSections=" + std::to_string(settings.sections) + "\n";
+    data += "platform=" + std::to_string((int)settings.platform) + "\n";
 
     if (!SaveDataAt(data, settingPath, std::ios::out)) {
         LogThis("Failed to write settings to file: " + settingPath);

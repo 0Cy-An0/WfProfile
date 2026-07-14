@@ -6,6 +6,8 @@
 #include <vector>
 #include <curl/curl.h>
 
+#include "FileAccess/FileAccess.h"
+
 enum class FetchType {
     STRING,
     PNG,
@@ -17,7 +19,7 @@ std::vector<uint8_t> fetchUrl(const std::string& effective_url, FetchType fetchT
 std::shared_ptr<const std::vector<uint8_t>>  fetchUrlCached(const std::string& effective_url, FetchType fetchType);
 
 void FetchGameUpdate(); //as self explanatory as the one above ;). saves to data/warframe as .json
-bool UpdatePlayerData(const std::string& nonce = "");
+bool UpdatePlayerData(const std::string& accountId = "", WarframePlatform platform = WarframePlatform::PC);
 
 //for the url fetch cache
 const size_t CACHE_LIMIT = 30;

@@ -26,6 +26,25 @@ inline std::chrono::steady_clock::time_point next_allowed{std::chrono::steady_cl
 inline constexpr auto THROTTLE_SECONDS = std::chrono::seconds(30);
 
 
+static std::string getProfileUrl(const WarframePlatform platform) {
+    switch (platform) {
+        case WarframePlatform::PC:
+            return "https://api.warframe.com/cdn/getProfileViewingData.php?playerId=";
+        case WarframePlatform::PlayStation:
+            return "https://api-ps4.warframe.com/cdn/getProfileViewingData.php?playerId=";
+        case WarframePlatform::Xbox:
+            return "https://api-xb1.warframe.com/cdn/getProfileViewingData.php?playerId=";
+        case WarframePlatform::Switch:
+            return "https://api-swi.warframe.com/cdn/getProfileViewingData.php?playerId=";
+        case WarframePlatform::iOS:
+            return "https://api-mob.warframe.com/cdn/getProfileViewingData.php?playerId=";
+        case WarframePlatform::Android:
+            return "https://api-and.warframe.com/cdn/getProfileViewingData.php?playerId=";
+        default:
+            return "https://api.warframe.com/cdn/getProfileViewingData.php?playerId=";
+    }
+}
+
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t realSize = size * nmemb;
     auto* mem = static_cast<std::vector<uint8_t>*>(userp);
@@ -242,9 +261,9 @@ std::vector<uint8_t> fetchUrl(const std::string& url, FetchType fetchType) {
     }
 }
 
-bool UpdatePlayerData(const std::string& accountId) {
+bool UpdatePlayerData(const std::string& accountId, const WarframePlatform platform) {
     //if (nonce.empty()) nonce = findNonceInProcess("Warframe.x64.exe");
-    std::string url = "http://content.warframe.com/dynamic/getProfileViewingData.php?playerId=" + accountId;
+    std::string url = getProfileUrl(platform) + accountId;
     LogThis("got url: "+  url);
     std::vector<uint8_t> vec = fetchUrl(url, FetchType::STRING);
     std::string result(vec.begin(), vec.end());

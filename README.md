@@ -4,23 +4,6 @@ A tool to track your **Warframe Mastery progress**.
 Updates via the official Warframe public export.
 
 ---
-## Importanted Note
-
-As of Update 43, the automatic profile ID detection method is no longer reliable, because Warframe no longer prints the profile ID in `EE.log`. The profile update that used to rely on `http://content.warframe.com/dynamic/getProfileViewingData.php?` also appears to have changed or been deprecated, so the (auto) sync does not work anymore.
-
-It is neccesary to manually retrieve your account ID and profile data for now. To do that, log in to your Warframe account on `warframe.com`, open `https://www.warframe.com/api/user-data`, and look for your `user_id` value.
-
-Then open the profile-viewing URL for your platform, replacing `ACCOUNTID` with that value and copy the text into `\WFProfil\data\Player\player_data.json` replacing any old data.
-- PC: `https://api.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
-- PlayStation: `https://api-ps4.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
-- Xbox: `https://api-xb1.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
-- Switch: `https://api-swi.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
-- iOS: `https://api-mob.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
-- Android: `https://api-and.warframe.com/cdn/getProfileViewingData.php?playerId=ACCOUNTID`
-
-This Tool should otherwise be uneffected and will still show you Progress as shown in the screenshots below.
-
----
 
 ## Usage Notes
 
