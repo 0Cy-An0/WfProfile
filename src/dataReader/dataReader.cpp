@@ -687,8 +687,9 @@ std::vector<MissionData> GetMissions(const json& playerJson, const json& NodesXp
             int completes = getValueByKey<int>(m, "Completes", 0, true);
             int tier = getValueByKey<int>(m, "Tier", 0, true);
             //TODO: Verify if tier can be 1 and completes 0 or more concretely when it increases the tier to 1
+            //this pattern seems to hold expect for Descendia where the Descend is tier 2; marie tier 3 and lyon/roathe both tier 4; I dont know someone that has not done them sp to check against
             data.isCompleted = completes > 0;
-            data.sp = (tier == 1); // Steel Path completed
+            data.sp = (tier >= 1); // Steel Path completed
         } else {
             data.sp = false;
             data.isCompleted = false;

@@ -1,4 +1,4 @@
-#include "OverviewPartWidget.h"
+#include "overviewPartWidget.h"
 #include <QHeaderView>
 
 #include "FileAccess/FileAccess.h"

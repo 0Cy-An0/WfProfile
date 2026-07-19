@@ -5,6 +5,8 @@
 #include <QCloseEvent>
 #include <QStackedWidget>
 #include <QProgressBar> //this is used even if the IDE tells you its not
+#include <QtNetwork/QNetworkCookie>
+#include <QtWebEngineWidgets/QWebEngineView>
 
 #include "CaptureOverlay.h"
 #include "overviewPartWidget.h"
@@ -28,28 +30,40 @@ public:
     static Settings getWindowSettings();
     void updatePlayerData(bool skipFetch = false);
 
-    void closeEvent(QCloseEvent *event) override;
-
     ~MainWindow() override;
 
 private:
     std::vector<CaptureOverlay*> m_overlays;
+
     BackgroundWorker* backgroundWorker = nullptr;
+
     QThread* backgroundThread = nullptr;
 
     static std::mutex settingsMutex;
+
     static Settings settings;
 
     QWidget* contentField = nullptr;
+
     QStackedWidget *contentArea = nullptr;
+
     QHBoxLayout *mainLayout = nullptr;
 
     QLabel* xpToMasteryLabel = nullptr;
+
     QProgressBar* xpToMasteryBar = nullptr;
+
     QProgressBar* xpToMaxBar = nullptr;
+
     OverviewPartWidget* equipmentField = nullptr;
+
     OverviewPartWidget* starChartField = nullptr;
+
     OverviewPartWidget* intrinsicsField = nullptr;
+
+    QWebEngineProfile *warframeProfile = nullptr;
+
+    QWebEngineView *warframeView = nullptr;
 
     int currentIndex = 0;
 
@@ -88,7 +102,13 @@ private:
 
     void exportPlayer();
 
+    void onFetchGidClicked(QLineEdit *idInput);
+
+    void onGidCookieAdded(const QNetworkCookie &cookie, QLineEdit *idInput);
+
 protected:
+    void closeEvent(QCloseEvent *event) override;
+
     void updateGameData();
 
 };

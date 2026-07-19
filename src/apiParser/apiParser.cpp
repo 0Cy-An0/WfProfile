@@ -12,7 +12,9 @@
 #include <sstream>
 #include <cstdint>
 #include <list>
+#include <mutex>
 #include <shared_mutex>
+#include <thread>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -263,7 +265,7 @@ std::vector<uint8_t> fetchUrl(const std::string& url, FetchType fetchType) {
 
 bool UpdatePlayerData(const std::string& accountId, const WarframePlatform platform) {
     //if (nonce.empty()) nonce = findNonceInProcess("Warframe.x64.exe");
-    std::string url = getProfileUrl(platform) + accountId;
+    const std::string url = getProfileUrl(platform) + accountId;
     LogThis("got url: "+  url);
     std::vector<uint8_t> vec = fetchUrl(url, FetchType::STRING);
     std::string result(vec.begin(), vec.end());

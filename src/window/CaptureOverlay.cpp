@@ -66,7 +66,5 @@ void CaptureOverlay::hideEvent(QHideEvent*) {
 
 void CaptureOverlay::earlyTimeout() {
     m_lifetimeTimer->stop();
-    m_lifetimeTimer->deleteLater();
-    this->deleteLater();
-    timeout();
+    hide();
 }

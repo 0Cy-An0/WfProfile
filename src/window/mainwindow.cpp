@@ -1,11 +1,10 @@
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QFileDialog>
 #include <QListWidget>
 #include <QPushButton>
 #include <QCheckBox>
 #include <QStandardPaths>
-#include <QDesktopServices>
+#include <QtWebEngineCore/QWebEngineProfile>
+#include <QWebEngineCookieStore>
 #include <QComboBox>
 #include <QInputDialog>
 #include <QGroupBox>
@@ -89,10 +88,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(backgroundThread, &QThread::started, backgroundWorker, &BackgroundWorker::startWork);
     connect(backgroundThread, &QThread::finished, backgroundWorker, &QObject::deleteLater);
-    connect(backgroundThread, &QThread::finished, backgroundThread, &QObject::deleteLater);
-    //i was told this should stop it with destruction of MainWindow but still should be done manually to be sure
-    connect(this, &MainWindow::destroyed, backgroundWorker, &BackgroundWorker::stopWork);
-    connect(this, &MainWindow::destroyed, backgroundThread, &QThread::quit);
+    connect(backgroundThread, &QThread::finished, backgroundThread, &QObject::deleteLater); ;
 
     backgroundThread->start();
 
@@ -619,14 +615,23 @@ QWidget* MainWindow::createOptionsPage() {
     auto gameUpdateBtn = new QPushButton("Update Game Data", dataGroup);
     gameUpdateBtn->setStyleSheet(btnStyle);
 
-    auto helpLabel = new QLabel(
-    "Warframe no longer exposes profile IDs in EE.log. "
-    "Click the button to open Warframe in your browser, sign in, "
-    "then copy your user_id from /api/user-data and paste it here.",
-    dataGroup
-);
+    auto helpLabel = new QLabel(dataGroup);
     helpLabel->setWordWrap(true);
     helpLabel->setStyleSheet("color: white; font-size: 11px;");
+
+    helpLabel->setText(
+        "Warframe no longer exposes profile IDs in EE.log. "
+        "You can either:<br>"
+        "• Click <b>Open Browser</b> to log in inside the app and auto-fill your ID.<br>"
+        "• Or go to "
+        "<a href=\"https://www.warframe.com/\">warframe.com</a> "
+        "Login, visit "
+        "<a href=\"https://www.warframe.com/api/user-data\">/api/user-data</a> "
+        "in your browser, copy your user_id and then paste it here."
+    );
+    helpLabel->setTextFormat(Qt::RichText);
+    helpLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    helpLabel->setOpenExternalLinks(true);
 
 
     auto* inputLayout = new QHBoxLayout();
@@ -647,9 +652,8 @@ QWidget* MainWindow::createOptionsPage() {
         WriteSettings(settings);
     });
 
-    connect(BrowserBtn, &QPushButton::clicked, this, [=] {
-        QDesktopServices::openUrl(QUrl("https://www.warframe.com/"));
-        QDesktopServices::openUrl(QUrl("https://www.warframe.com/api/user-data"));
+    connect(BrowserBtn, &QPushButton::clicked, this, [this, IdInput] {
+        onFetchGidClicked(IdInput);
     });
 
     connect(platformCombo, &QComboBox::currentIndexChanged, this, [=](int idx) {
@@ -901,7 +905,7 @@ void MainWindow::updateGameData() {
         QMetaObject::invokeMethod(backgroundWorker, [this]() {
             FetchGameUpdate();
             // Notify main thread when background work is done
-            QMetaObject::invokeMethod(this, [this]() {
+            QMetaObject::invokeMethod(this, []() {
                 RefreshNameMap();
             }, Qt::QueuedConnection);
         }, Qt::QueuedConnection);
@@ -929,27 +933,100 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     for (CaptureOverlay* overlay : m_overlays) {
         if (overlay) {
             overlay->earlyTimeout();
-            overlay->setParent(this); //for some reason not doing this and qDelete will leave exactly 1 of the potential 4 overlays just hanging there. I assume i could skip early timeout with this as QT should handle the deletion now, but maybe not.
         }
     }
     qDeleteAll(m_overlays);
     m_overlays.clear();
 
-    if (backgroundWorker) {
-        backgroundWorker->stopWork();
-    }
-
     event->accept();
 }
 
-MainWindow::~MainWindow() {
-    qDeleteAll(m_overlays);
-    m_overlays.clear();
-    if (backgroundWorker) {
-        backgroundWorker->stopWork();
+void MainWindow::onFetchGidClicked(QLineEdit *idInput)
+{
+    // If already open, just bring it to front
+    if (warframeView) {
+        warframeView->raise();
+        warframeView->activateWindow();
+        return;
     }
-    if (backgroundThread) {
+
+    // Create a dedicated profile for Warframe cookies
+    if (!warframeProfile) {
+        warframeProfile = new QWebEngineProfile("warframe_profile", this);
+        // Ensure cookies are persisted
+        warframeProfile->setPersistentCookiesPolicy(QWebEngineProfile::ForcePersistentCookies);
+    } else {
+        // Clean previous connections
+        QWebEngineCookieStore *oldStore = warframeProfile->cookieStore();
+        oldStore->disconnect(this);
+    }
+
+    // Create a page+view using this profile
+    QWebEnginePage *page = new QWebEnginePage(warframeProfile, this);
+    warframeView = new QWebEngineView();
+    warframeView->setAttribute(Qt::WA_DeleteOnClose); // auto delete
+    warframeView->setPage(page);
+
+    // Connect cookieAdded signal
+    QWebEngineCookieStore *store = warframeProfile->cookieStore();
+    connect(store, &QWebEngineCookieStore::cookieAdded,
+        this, [this, idInput](const QNetworkCookie &cookie) {
+        onGidCookieAdded(cookie, idInput);
+    });
+
+    // Load Warframe
+    warframeView->load(QUrl("https://www.warframe.com/"));
+    warframeView->setWindowTitle("Log in to Warframe to fetch account ID");
+    warframeView->resize(1024, 768);
+    warframeView->show();
+}
+
+void MainWindow::onGidCookieAdded(const QNetworkCookie &cookie, QLineEdit *idInput)
+{
+    if (cookie.name() != "gid")
+        return;
+
+    const QString gid = QString::fromUtf8(cookie.value()).trimmed();
+    if (gid.isEmpty())
+        return;
+
+    // Update UI and settings
+    if (idInput) {
+        idInput->setText(gid);
+    }
+
+    //disconnect to avoid repeated triggers
+    if (warframeProfile) {
+        QWebEngineCookieStore *store = warframeProfile->cookieStore();
+        store->disconnect(this);
+    }
+
+    // Close the login window
+    if (warframeView) {
+        warframeView->close();
+        warframeView = nullptr;
+    }
+}
+
+MainWindow::~MainWindow() {
+    if (backgroundWorker && backgroundThread && backgroundThread->isRunning()) {
+
+        QMetaObject::invokeMethod(
+            backgroundWorker, "stopWork",
+            Qt::QueuedConnection
+        );
+
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+
         backgroundThread->quit();
+
         backgroundThread->wait();
     }
+
+
+    qDeleteAll(m_overlays);
+    m_overlays.clear();
+
+    backgroundWorker = nullptr;
+    backgroundThread = nullptr;
 }

@@ -1,6 +1,6 @@
 #ifdef LINUX_PLATFORM
 
-#include "Autostart.h"
+#include "autostart.h"
 #include <QStandardPaths>
 #include <QDir>
 #include <QFile>

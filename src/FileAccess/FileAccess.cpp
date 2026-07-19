@@ -36,7 +36,8 @@ std::string ReadFile(const std::string& path, bool binary = false) {
 
     std::ifstream file(path, mode);
     if (!file.is_open()) {
-        LogThis("Could not open file " + path);
+        std::string absolute = std::filesystem::weakly_canonical(path).string();
+        LogThis("Could not open file " + path + " (absolute path: " + absolute + ")");
         return {};
     }
     return {std::istreambuf_iterator(file), {}};
@@ -221,7 +222,12 @@ FileJsonType ReadData(DataType type) {
         default: throw std::runtime_error("Unimplemented DataType!");
     }
     LogThis("reading data type: " + std::to_string(static_cast<int>(type)));
-    return FileJsonType::parse(ReadFile(filename));
+    std::string fileData = ReadFile(filename);
+    if (fileData.empty()) {
+        LogThis("data was empty");
+        return  FileJsonType::object();
+    }
+    return FileJsonType::parse(fileData);
 }
 
 template nlohmann::json ReadData<nlohmann::json>(DataType);
