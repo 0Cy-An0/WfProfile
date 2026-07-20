@@ -153,47 +153,37 @@ void BackgroundWorker::captureRewardScreen() {
     LogThis("trying to capture screen");
     Settings s = MainWindow::getWindowSettings();
 
-    QRect rect(s.captureTopLeft, s.captureBottomRight);
-    if (rect.isEmpty() || rect.isNull()) {
-        LogThis("Invalid capture rect");
+    auto sections = makeCaptureSections(s);
+    if (sections.empty()) {
+        LogThis("Invalid capture rect or sections");
         return;
     }
 
-    QScreen* screen = QGuiApplication::screenAt(rect.center());
+    QRect wholeRect(s.captureTopLeft, s.captureBottomRight);
+    QScreen* screen = QGuiApplication::screenAt(wholeRect.center());
     if (!screen) screen = QGuiApplication::primaryScreen();
 
-    int sections = s.sections;
-    if (sections < 1) {
-        LogThis("number of sections below 1");
-        return;
-    }
-
-    int sectionWidth = rect.width() / sections;
-    int sectionHeight = rect.height();
-
-    // Capture each section separately
-    for (int i = 0; i < sections; ++i) {
-        QRect sectionRect(
-            rect.x() + i * sectionWidth,
-            rect.y(),
-            sectionWidth,
-            sectionHeight
+    for (const auto& sec : sections) {
+        const QRect& sectionRect = sec.rect;
+        QPixmap sectionShot = screen->grabWindow(
+            0,
+            sectionRect.x(), sectionRect.y(),
+            sectionRect.width(), sectionRect.height()
         );
 
-        QPixmap sectionShot = screen->grabWindow(0,
-            sectionRect.x(), sectionRect.y(),
-            sectionRect.width(), sectionRect.height());
+        if (sectionShot.isNull()) {
+            LogThis("Failed to capture section " + std::to_string(sec.index + 1));
+            continue;
+        }
 
-        if (sectionShot.isNull()) { LogThis("Failed to capture section " + std::to_string(i+1)); continue; }
-
-        LogThis("Captured section " + std::to_string(i+1) +
+        LogThis("Captured section " + std::to_string(sec.index + 1) +
                 ": x=" + std::to_string(sectionRect.x()) +
                 ", w=" + std::to_string(sectionRect.width()));
 
         //ocr has trouble reading the rewards so im trying to make the text more readable first
         QImage img = sectionShot.toImage().convertToFormat(QImage::Format_ARGB32);
         if (img.isNull()) {
-            LogThis("Failed to convert section " + std::to_string(i+1) + " to QImage");
+            LogThis("Failed to convert section " + std::to_string(sec.index+1) + " to QImage");
             continue;
         }
 
@@ -226,12 +216,12 @@ void BackgroundWorker::captureRewardScreen() {
         QPixmap enhancedShot = QPixmap::fromImage(img);
 
         QString sectionOcr = performOCR(enhancedShot);
-        LogThis("Section " + std::to_string(i+1) + " OCR: " + sectionOcr.toStdString());
+        LogThis("Section " + std::to_string(sec.index+1) + " OCR: " + sectionOcr.toStdString());
 
-        parseItemsAndShowOverlay(sectionOcr.toStdString(), i, sectionRect);
+        parseItemsAndShowOverlay(sectionOcr.toStdString(), sec.index, sectionRect);
     }
 
-    LogThis("Processed " + std::to_string(sections) + " reward sections");
+    LogThis("Processed " + std::to_string(sections.size()) + " reward sections");
 }
 
 QString BackgroundWorker::performOCR(const QPixmap& pixmap) {
@@ -406,51 +396,64 @@ void BackgroundWorker::parseItemsAndShowOverlay(const std::string &ocrText, int 
 void BackgroundWorker::showSectionOverlay(const std::string &reward, int sectionIndex, QRect captureRect) {
     if (!mainWindow) return;
 
-    LogThis("Showing section overlay " + std::to_string(sectionIndex+1));
+    LogThis("Showing section overlay " + std::to_string(sectionIndex + 1));
 
-    QMetaObject::invokeMethod(mainWindow, [this, reward, captureRect]() {
-        const int sectionHeight = captureRect.height();
+    QMetaObject::invokeMethod(mainWindow,
+        [this, reward, captureRect]() {
+            const int sectionHeight = captureRect.height();
 
-        const QRect overlayRect(captureRect.x(),
-                         captureRect.y() - (sectionHeight * 4),
-                         captureRect.width(),
-                         sectionHeight);
+            // Compute a global rect above the capture area.
+            const QRect overlayGlobalRect(
+                captureRect.x(),
+                captureRect.y() - (sectionHeight * 4),
+                captureRect.width(),
+                sectionHeight
+            );
 
-        QString text;
-        auto [items, quantities] = getMainCraftedIdsWithQuantities(reward);
-        if (items.empty()) {
-            text = QString::fromStdString(nameFromId(reward) + ": nothing found");
-        }
-        else {
-            std::string result = nameFromId(reward) + ":\n";
-            for (size_t i = 0; i < items.size(); ++i) {
-                const auto& item = items[i];
-                const std::string name = item.name;
-                const int qty = (i < quantities.size()) ? quantities[i] : 1;
-                const int current = item.info.level;
-                const int max = item.info.maxLevel;
+            QString text;
+            auto [items, quantities] = getMainCraftedIdsWithQuantities(reward);
+            if (items.empty()) {
+                text = QString::fromStdString(nameFromId(reward) + ": nothing found");
+            } else {
+                std::string result = nameFromId(reward) + ":\n";
+                for (size_t i = 0; i < items.size(); ++i) {
+                    const auto& item = items[i];
+                    const std::string name = item.name;
+                    const int qty = (i < quantities.size()) ? quantities[i] : 1;
+                    const int current = item.info.level;
+                    const int max = item.info.maxLevel;
 
-                result += name + "  (x" + std::to_string(qty) + "): " +
-                          std::to_string(current) + "/" + std::to_string(max);
+                    result += name + "  (x" + std::to_string(qty) + "): " +
+                              std::to_string(current) + "/" + std::to_string(max);
 
-                if (i + 1 < items.size())
-                    result += "\n";
+                    if (i + 1 < items.size())
+                        result += "\n";
+                }
+
+                text = QString::fromStdString(result);
             }
 
-            text = QString::fromStdString(result);
-        }
+            QScreen* screen = QGuiApplication::screenAt(overlayGlobalRect.center());
+            if (!screen)
+                screen = QGuiApplication::primaryScreen();
 
-        auto* overlay = new CaptureOverlay(QColor(0, 0, 0), QColor(255, 105, 180), text, nullptr);
-        connect(overlay, &CaptureOverlay::expired,
-            this, [this](CaptureOverlay* o) {
-                b_overlays.erase(std::ranges::remove(b_overlays, o).begin(), b_overlays.end());
-                o->deleteLater();
-            });
-        b_overlays.push_back(overlay);
-        overlay->setGeometry(overlayRect);
-        overlay->raise();
-        overlay->show();
-    }, Qt::QueuedConnection);
+            auto* overlay = new CaptureOverlay(QColor(0, 0, 0),
+                                               QColor(255, 105, 180),
+                                               text,
+                                               nullptr);
+
+            connect(overlay, &CaptureOverlay::expired,
+                    this, [this](CaptureOverlay* o) {
+                        b_overlays.erase(std::ranges::remove(b_overlays, o).begin(), b_overlays.end());
+                        o->deleteLater();
+                    });
+
+            b_overlays.push_back(overlay);
+
+            // Fullscreen overlay, but text drawn only in overlayGlobalRect
+            overlay->showTextOverlayOnScreen(screen, overlayGlobalRect);
+        },
+        Qt::QueuedConnection);
 }
 
 bool BackgroundWorker::parseMissionFinish(const std::string& line) {

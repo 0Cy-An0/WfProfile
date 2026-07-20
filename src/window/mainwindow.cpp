@@ -787,45 +787,35 @@ QWidget* MainWindow::createOptionsPage() {
 
     connect(testCaptureBtn, &QPushButton::pressed, this, [this]() {
         LogThis("TestButtonPressed");
-        //TODO: remember to put background workers overlays in an array too (with early exit)
 
-        QRect rect(settings.captureTopLeft, settings.captureBottomRight);
-
-        for (CaptureOverlay* overlay : m_overlays) {
-            if (overlay) overlay->deleteLater();
-        }
-        m_overlays.clear();
-
-        int sections = settings.sections;
-        if (sections < 1) {
-            LogThis("number of sections below 1");
+        const auto sections = makeCaptureSections(settings);
+        if (sections.empty()) {
+            LogThis("Invalid capture rect or sections");
             return;
         }
 
-        int sectionWidth = rect.width() / sections;
-        int sectionHeight = rect.height();
+        for (const auto& s : sections) {
+            const QRect& globalRect = s.rect;
 
-        for (int i = 0; i < sections; ++i) {
-            QRect sectionRect(
-                rect.x() + i * sectionWidth,
-                rect.y(),
-                sectionWidth,
-                sectionHeight
-            );
+            QScreen* screen = QGuiApplication::screenAt(globalRect.center());
+            if (!screen) screen = QGuiApplication::primaryScreen();
 
             auto* overlay = new CaptureOverlay(nullptr);
+
             connect(overlay, &CaptureOverlay::expired,
-            this, [this](CaptureOverlay* o) {
-                m_overlays.erase(std::ranges::remove(m_overlays, o).begin(), m_overlays.end());
-                o->deleteLater();
-            });
-            overlay->setGeometry(sectionRect);
-            overlay->raise();
-            overlay->show();
+                    this, [this](CaptureOverlay* o) {
+                        m_overlays.erase(std::ranges::remove(m_overlays, o).begin(), m_overlays.end());
+                        o->deleteLater();
+                    });
+
+            overlay->showOnScreenWithGlobalRect(screen, globalRect);
 
             m_overlays.push_back(overlay);
-            LogThis("Created overlay " + std::to_string(i+1) +
-                    " at x=" + std::to_string(sectionRect.x()));
+            LogThis("Overlay " + std::to_string(s.index + 1) +
+                    " global rect: x=" + std::to_string(globalRect.x()) +
+                    ", y=" + std::to_string(globalRect.y()) +
+                    ", w=" + std::to_string(globalRect.width()) +
+                    ", h=" + std::to_string(globalRect.height()));
         }
     });
 
