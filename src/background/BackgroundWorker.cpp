@@ -268,10 +268,10 @@ double levenshtein(const std::string& s1, const std::string& s2) {
     for (int i = 1; i <= m; ++i) {
         for (int j = 1; j <= n; ++j) {
             int cost = (s1[i - 1] == s2[j - 1]) ? 0 : 1;
-            d[i][j] = std::min(d[i - 1][j] + 1, std::min(d[i][j - 1] + 1, d[i - 1][j - 1] + cost));
+            d[i][j] = (std::min)(d[i - 1][j] + 1, (std::min)(d[i][j - 1] + 1, d[i - 1][j - 1] + cost));
         }
     }
-    return 1.0 - static_cast<double>(d[m][n]) / std::max(m, n);  // Normalized similarity
+    return 1.0 - static_cast<double>(d[m][n]) / (std::max)(m, n);  // Normalized similarity
 }
 
 double ngramScore(const std::string& a, const std::string& b, int n = 3) {
@@ -285,7 +285,7 @@ double ngramScore(const std::string& a, const std::string& b, int n = 3) {
         while (j < gramsB.size() && gramsB[j] < ga) ++j;
         if (j < gramsB.size() && ga == gramsB[j]) { ++common; ++j; }
     }
-    return static_cast<double>(common) / std::max(gramsA.size(), gramsB.size());
+    return static_cast<double>(common) / (std::max)(gramsA.size(), gramsB.size());
 }
 
 //im gonna be honest. i stole this from se webs; i have no idea and dont really care that much to do a good matching algo myself
@@ -330,11 +330,11 @@ double fuzzyMatchScore(const std::string& a, const std::string& b) {
         } else {
             ++j;
         }
-        total = std::max(static_cast<int>(i), static_cast<int>(j));
+        total = (std::max)(static_cast<int>(i), static_cast<int>(j));
     }
 
     double tokenScore = ta.empty() || tb.empty() ? 0.0 : static_cast<double>(matches) / total;
-    double lenBonus = 1.0 + std::min(static_cast<double>(na.length()), static_cast<double>(nb.length())) / 100.0;
+    double lenBonus = 1.0 + (std::min)(static_cast<double>(na.length()), static_cast<double>(nb.length())) / 100.0;
     double score = (tokenScore * 0.7 + gramBonus * 0.3) * lenBonus;  // Blend scores
 
     return std::clamp(score, 0.0, 1.0);
