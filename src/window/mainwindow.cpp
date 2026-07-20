@@ -955,6 +955,9 @@ void MainWindow::onFetchGidClicked(QLineEdit *idInput)
     QWebEnginePage *page = new QWebEnginePage(warframeProfile, this);
     warframeView = new QWebEngineView();
     warframeView->setAttribute(Qt::WA_DeleteOnClose); // auto delete
+    connect(warframeView, &QObject::destroyed, this, [this]() {
+        warframeView = nullptr;
+    });
     warframeView->setPage(page);
 
     // Connect cookieAdded signal
